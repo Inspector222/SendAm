@@ -7,6 +7,7 @@ Contributions are welcome across product, engineering, documentation, testing, s
 By participating in this project you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Project Scope
+## Project Scope
 
 SendAm currently focuses on:
 
@@ -117,6 +118,47 @@ Or run everything (API + both apps) at once:
 npm run dev
 ```
 
+### Troubleshooting your setup
+
+The repo is an npm-workspaces monorepo, and most setup problems come from
+treating an `apps/*` directory as its own project. The common ones:
+
+**1. Wrong Node version (`EBADENGINE`, syntax errors in dependencies, or
+Vite/Prisma refusing to start).** The repo pins Node 20 in `.nvmrc`. Check
+and switch before anything else:
+
+```bash
+node --version   # should print v20.x
+nvm use          # picks up .nvmrc (nvm-windows: nvm use 20)
+```
+
+**2. Workspace install problems (`Cannot find module` from one app, or a
+stray `apps/*/node_modules` that disagrees with the root).** Dependencies
+for every app install from the **repo root** — running `npm install` inside
+`apps/api` creates a second, partial tree that shadows the hoisted one:
+
+```bash
+# from the repository root — installs every workspace
+npm install
+
+# add a dependency to ONE app, still from the root
+npm install <pkg> --workspace=apps/api
+```
+
+If an app-level install already happened, delete that app's local
+`node_modules` and re-run `npm install` at the root.
+
+**3. Running one app's tests instead of the whole repo.** The root
+`npm test` runs the API suite only. To run a single app's suite in
+isolation (none of them need a database — the unit tests are offline):
+
+```bash
+npm test --workspace=apps/api       # node --test
+npm test --workspace=apps/admin     # vitest run
+npm test --workspace=apps/landing   # vitest run  (or: npm run test:landing)
+npm test --workspace=apps/chat-sim  # jest
+```
+
 ## Development Workflow
 
 1. Fork the repository.
@@ -211,6 +253,26 @@ npm run build --workspace=apps/admin
 ```
 
 These same checks run automatically in CI (`.github/workflows/ci.yml`) on every pull request.
+
+### Secret scanning
+
+CI runs [gitleaks](https://github.com/gitleaks/gitleaks) on every push and PR
+to `main` (`.github/workflows/secret-scan.yml`). The ruleset covers Stellar
+keys, provider tokens, database URLs, and generic high-entropy secrets.
+
+Before pushing, you can verify the scanner locally:
+
+```bash
+./scripts/secret-scan-self-test.sh   # requires gitleaks binary
+```
+
+If gitleaks flags something that is not a real secret (a test fixture,
+placeholder, or documentation example), add a targeted allowlist entry in
+`.gitleaks.toml` and document the reason in your PR. Do **not** commit real
+credentials to work around the scanner — rotate them instead.
+
+See [`docs/SECRET-SCANNING.md`](docs/SECRET-SCANNING.md) for the full
+false-positive review process and credential-rotation response runbook.
 
 ## Security Policy
 
