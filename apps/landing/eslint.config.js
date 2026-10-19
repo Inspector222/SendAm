@@ -19,8 +19,9 @@ export default defineConfig([
     },
   },
   {
-    // Vite config runs in Node, so it needs Node globals (e.g. __dirname).
-    files: ['vite.config.js'],
+    // Vite and Playwright configs run in Node, so they need Node globals
+    // (e.g. __dirname, process.env).
+    files: ['vite.config.js', 'playwright.config.js'],
     languageOptions: { globals: globals.node },
   },
   {
@@ -29,4 +30,4 @@ export default defineConfig([
     files: ['**/*.test.{js,jsx}', 'src/test/**/*.js'],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
   },
-])
+]);

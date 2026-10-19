@@ -36,34 +36,43 @@ const mockRecipientWallet = {
   encryptedSecretKey: 'encrypted_secret_key',
 };
 
+const createdTransactions = new Map();
+
 // Database queries/mocks
 const prismaMock = {
   transaction: {
     findUnique: async ({ where }) => {
       if (where.id === 'tx_original_123') return mockOriginalTx;
-      return null;
+      return createdTransactions.get(where.id) || null;
     },
     findMany: async ({ where }) => {
-      // Find all successful refund transactions
+      const list = Array.from(createdTransactions.values());
       if (where.type === 'refund' && where.status === 'success') {
-        return []; // starts empty
+        return list.filter((tx) => tx.type === 'refund' && tx.status === 'success');
       }
-      return [];
+      return list;
     },
     create: async ({ data }) => {
-      return { id: 'refund_tx_new', status: 'processing', ...data };
+      const tx = { id: 'refund_tx_new', status: 'processing', ...data };
+      createdTransactions.set(tx.id, tx);
+      return { ...tx };
     },
     update: async ({ where, data }) => {
       if (where.id === 'tx_original_123') {
         mockOriginalTx.metadata = data.metadata;
         return mockOriginalTx;
       }
-      return { id: where.id, ...data };
+      const existing = createdTransactions.get(where.id) || { id: where.id };
+      const updated = { ...existing, ...data, metadata: { ...(existing.metadata || {}), ...(data.metadata || {}) } };
+      createdTransactions.set(where.id, updated);
+      return { ...updated };
     },
   },
   wallet: {
     findUnique: async ({ where }) => {
-      if (where.userId_chain && where.userId_chain.userId === 'user_123') return mockSenderWallet;
+      const userId = where.userId_chain?.userId || where.userId_chain_network?.userId;
+      if (userId === 'user_123') return mockSenderWallet;
+      if (userId === 'user_recipient_123') return mockRecipientWallet;
       return null;
     },
     findFirst: async ({ where }) => {
@@ -83,12 +92,12 @@ const prismaMock = {
 };
 
 const cryptoServiceMock = {
-  decrypt: (key) => 'SA_RECIPIENT_SECRET',
-  encrypt: (key) => 'encrypted',
+  decrypt: () => 'SA_RECIPIENT_SECRET',
+  encrypt: () => 'encrypted',
 };
 
 const stellarAdapterMock = {
-  submitPayment: async ({ secretKey, destination, amount, asset, memo, memoType }) => {
+  submitPayment: async ({ secretKey, destination, asset }) => {
     assert.equal(secretKey, 'SA_RECIPIENT_SECRET');
     assert.equal(destination, 'GABCsender');
     assert.equal(asset, 'XLM');
@@ -102,6 +111,7 @@ const stellarAdapterMock = {
 injectMock('common/prisma', prismaMock);
 injectMock('services/crypto.service', cryptoServiceMock);
 injectMock('wallet/stellar.adapter', stellarAdapterMock);
+injectMock('wallet/wallet.service', {});
 
 const { executeRefund } = require('../src/payment/payment.orchestrator');
 
@@ -138,12 +148,12 @@ test('executeRefund: rejects invalid refund reason', async () => {
 });
 
 test('executeRefund: prevents refund amount exceeding original transaction amount', async () => {
-  // Try to refund 150 XLM on top of the already refunded 50 XLM (limit is 100)
+  // Try to refund more than the original settled amount.
   await assert.rejects(
     () => executeRefund({
       transactionId: 'tx_original_123',
       reason: 'operator_mistake',
-      amount: '60.0000000',
+      amount: '150.0000000',
       adminId: 'admin_test',
     }),
     /Refund amount exceeds the maximum refundable amount/
