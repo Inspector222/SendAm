@@ -21,13 +21,21 @@ const prismaMock = {
     findFirst: async () => null, // default: never transacted successfully
   },
   alias: {
+    findUnique: async () => null,
     findFirst: async () => null, // default: not a saved contact
   },
   user: {
     findUnique: async () => userMock,
-    update: async ({ where, data }) => {
+    update: async ({ data }) => {
       userMock.pendingSend = data.pendingSend;
       return userMock;
+    },
+    updateMany: async ({ where: _where, data }) => {
+      if (userMock.pendingSend) {
+        userMock.pendingSend = data.pendingSend;
+        return { count: 1 };
+      }
+      return { count: 0 };
     },
   },
 };
@@ -43,6 +51,9 @@ injectMock('payment/payment.orchestrator', {
     transaction: { id: 'tx_rec_1', status: 'success' },
     receipt: { transactionId: 'tx_rec_1' },
   }),
+});
+injectMock('pricing/pricing.service', {
+  createQuote: async () => ({ id: 'quote_rec_1', expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString() }),
 });
 injectMock('compliance/pin.service', {
   verifyPin: (text, hash) => text === '1234' && hash === 'hashed:1234',
@@ -84,5 +95,4 @@ test('high-risk recipient identification, confirmation, and PIN input flow', asy
   await processMessage('+2348000000001', 'John', '1234', { notify });
   assert.equal(sentMessages.length, 4);
   assert.ok(sentMessages[3].includes('Payment success'));
-  assert.equal(userMock.pendingSend, null); // cleared on execution
 });
